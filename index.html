@@ -671,9 +671,12 @@ function renderQuestion(q, onNext) {
 
     // Column order matters for the exported sheet: the color-change marker (if any)
     // is written immediately before this question's own answer column.
+    if (q.category === "arithmetic" || q.id === "t4") {
+      responses[q.id + "_question"] = q.prompt;
+    }
     if (q.category && pendingColorChange) {
       responses[q.id + "_colorChangedTo"] = colorFriendlyName(pendingColorChange);
-    }
+  }
     responses[q.id] = value;
     responses[q.id + "_reactionMs"] = reactionMs;
     responses[q.id + "_totalTimeMs"] = totalTimeMs;
