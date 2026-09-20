@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light only">
+<meta name="color-scheme" content="light only">
 <style>html { color-scheme: light only; }</style>
 <title>Study</title>
 <style>
@@ -104,6 +104,414 @@
     background: currentColor;
     opacity: 0.5;
     transition: width 0.3s ease;
+  }
+  .skip-btn {
+    position: fixed;
+    bottom: 14px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 13px;
+    opacity: 0.6;
+    text-decoration: underline;
+    color: inherit;
+  }
+  .export-dot {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: inherit;
+    opacity: 1;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .export-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .export-overlay.open { display: flex; }
+  .export-box {
+    background: #fff;
+    color: #1a1a1a;
+    border-radius: 8px;
+    padding: 20px;
+    width: 90%;
+    max-width: 300px;
+    text-align: center;
+  }
+  .export-box input {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    margin: 12px 0;
+    text-align: center;
+  }
+  .export-box button {
+    padding: 8px 18px;
+    font-size: 14px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin: 0 4px;
+  }
+  .export-box .confirm { background: #2b2b2b; color: white; }
+  .export-box .cancel { background: #eee; color: #333; }
+  .export-msg { font-size: 13px; margin-top: 8px; min-height: 16px; }
+</style>
+</head>
+<body>
+<div class="progress" id="progressBar" style="width:0%"></div>
+<div class="card" id="card"></div>
+<button class="export-dot" id="exportLink" aria-label=""></button>
+<div class="export-overlay" id="exportOverlay">
+  <div class="export-box">
+    <div id="passcodeStage">
+      <div>Researcher passcode</div>
+      <input type="password" id="passcodeInput" inputmode="numeric">
+      <div>
+        <button class="confirm" id="passcodeConfirm">Confirm</button>
+        <button class="cancel" id="passcodeCancel">Cancel</button>
+      </div>
+    </div>
+    <div id="actionStage" style="display:none;">
+      <div style="margin-bottom:10px;">Choose an action</div>
+      <div>
+        <button class="confirm" id="doExportBtn">Export CSV</button>
+        <button class="cancel" id="doClearBtn" style="background:#f2b8b8;">Clear all data</button>
+      </div>
+      <div id="clearConfirmStage" style="display:none; margin-top:14px;">
+        <div style="font-size:13px; margin-bottom:8px;">This permanently deletes every stored response. Are you sure?</div>
+        <button class="cancel" id="clearYes" style="background:#e63946; color:#fff;">Yes, delete everything</button>
+        <button class="cancel" id="clearNo">Cancel</button>
+      </div>
+    </div>
+    <div class="export-msg" id="exportMsg"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.13.2/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.13.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDlk9t3w1nHGvPYxTFc2ubpqCKEkUOIOgg",
+  authDomain: "survey-14a8b.firebaseapp.com",
+  projectId: "survey-14a8b",
+  storageBucket: "survey-14a8b.firebasestorage.app",
+  messagingSenderId: "635924627104",
+  appId: "1:635924627104:web:5600b957bc0adf8626d3c5",
+  measurementId: "G-CSKXSB8EWN"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+</script>
+<script>
+// ---------- CONFIG: edit questions here ----------
+
+const nameQuestion = { id: "name", prompt: "What's your name?", type: "text", placeholder: "Full name or nickname — either is fine" };
+
+const restDemographicQuestions = [
+  { id: "age", prompt: "How old are you?", type: "number", placeholder: "Age" },
+  { id: "education", prompt: "What's your highest level of education?", type: "select",
+    options: ["Less than high school", "High school", "Bachelor's degree", "Master's degree", "Doctorate", "Other"] },
+  { id: "country", prompt: "Which country are you in?", type: "text", placeholder: "Country" },
+  { id: "state", prompt: "Which state/region are you in?", type: "text", placeholder: "State / region" },
+  { id: "income", prompt: "What's your approximate annual income?", type: "select",
+    options: ["Under $20,000", "$20,000–$40,000", "$40,000–$70,000", "$70,000–$100,000", "Over $100,000", "Prefer not to say"] },
+  { id: "gender", prompt: "What's your gender?", type: "select",
+    options: ["Female", "Male", "Non-binary", "Prefer not to say", "Other"] },
+];
+
+// Sample task set — replace prompts/answers with your own as needed.
+
+// Mixed operation pool: multiplication, plus harder addition/subtraction (division skipped).
+// Each participant gets a random draw of 5 items from across all operation types.
+const mathPool = [
+  // multiplication
+  [6,7,"×"],[5,9,"×"],[7,3,"×"],[4,7,"×"],[8,6,"×"],[9,4,"×"],[3,8,"×"],[6,5,"×"],[7,9,"×"],[4,9,"×"],[8,3,"×"],[5,7,"×"],
+  // addition (harder — carrying required)
+  [47,38,"+"],[56,79,"+"],[123,87,"+"],[68,95,"+"],[74,58,"+"],[39,86,"+"],
+  // subtraction (harder — borrowing required)
+  [92,47,"-"],[81,39,"-"],[130,68,"-"],[105,77,"-"],[144,59,"-"],[121,83,"-"],
+];
+
+function computeAnswer(a, b, op) {
+  if (op === "×") return a * b;
+  if (op === "+") return a + b;
+  if (op === "-") return a - b;
+}
+
+function pickMathQuestions(count) {
+  const multItems = mathPool.filter(i => i[2] === "×");
+  const addItems = mathPool.filter(i => i[2] === "+");
+  const subItems = mathPool.filter(i => i[2] === "-");
+
+  const chosenMult = shuffle(multItems).slice(0, 2);
+  const chosenAdd = shuffle(addItems).slice(0, 1);
+  const chosenSub = shuffle(subItems).slice(0, 1);
+
+  const usedKeys = new Set([...chosenMult, ...chosenAdd, ...chosenSub].map(i => i.join(',')));
+  const remaining = mathPool.filter(i => !usedKeys.has(i.join(',')));
+  const chosenRandom = shuffle(remaining).slice(0, 1);
+
+  const finalItems = shuffle([...chosenMult, ...chosenAdd, ...chosenSub, ...chosenRandom]);
+
+  return finalItems.map((item, i) => {
+    const [a, b, op] = item;
+    const answer = computeAnswer(a, b, op);
+    return {
+      id: "m" + (i + 1),
+      category: "arithmetic",
+      prompt: `What is ${a} ${op} ${b}?`,
+      type: "number",
+      check: (val) => Number(val) === answer
+    };
+  });
+}
+
+const puzzleQuestions = [
+  { id: "p1", category: "puzzle", prompt: "If all Bloops are Razzles, and all Razzles are Lazzles, are all Bloops definitely Lazzles?", type: "select", options: ["Yes", "No"],
+    check: (val) => val === "Yes" },
+  { id: "p2", category: "puzzle", prompt: "What number comes next in this pattern: 3, 6, 5, 10, 9, 18, ?", type: "number",
+    check: (val) => Number(val) === 17 },
+  { id: "p3", category: "puzzle", prompt: "Mia is taller than Liam. Liam is taller than Noah. Noah is shorter than Oliver, but Oliver is shorter than Liam. Who is the second tallest?", type: "text", placeholder: "Your answer",
+    check: (val) => /\bliam\b/i.test(String(val || "")) },
+  { id: "p4", category: "puzzle", prompt: "A is the mother of B, but B is not the daughter of A. How is this possible?", type: "text", placeholder: "Your answer",
+    check: (val) => /\b(son|boy|male|he|him|his|man)\b/i.test(String(val || "")) },
+  { id: "p5", category: "puzzle", prompt: "You start facing North. You turn 90 degrees clockwise, then 180 degrees counterclockwise. Which direction are you facing?", type: "text", placeholder: "Your answer",
+    check: (val) => /\bwest\b/i.test(String(val || "")) },
+];
+const rhymeDictionary = {
+  light: ["night","sight","bright","flight","might","right","tight","fight","kite","height","write","delight","white","quite","slight","plight","site","bite","site","spite","invite","polite","tonight","insight","excite","invite","dynamite"],
+  tree: ["free","see","bee","key","tea","sea","three","knee","flea","glee","spree","plea","agree","decree","me","he","she","we","ski","fee","tee","pea","flee","degree","guarantee"],
+  cat: ["bat","hat","mat","rat","sat","fat","pat","chat","flat","that","gnat","splat","brat","vat","spat","scat","combat","format","acrobat"],
+};
+
+const taskQuestions = [
+  { id: "t1", category: "task", prompt: "Count how many times the letter \"e\" appears in this sentence: \"The quick brown fox jumps over the lazy dog.\"", type: "number",
+    check: (val) => Number(val) === 3 },
+  { id: "t2", category: "task", prompt: "Type the alphabet backwards, from Z to A.", type: "text", placeholder: "zyxwvu...",
+    check: (val) => String(val || "").replace(/[^a-z]/gi, "").toLowerCase() === "zyxwvutsrqponmlkjihgfedcba" },
+  { id: "t3", category: "task", prompt: "Type the numbers from 1 to 15, separated by commas, but skip every multiple of 3.", type: "text", placeholder: "1,2,4,5...",
+    check: (val) => {
+      const nums = String(val || "").match(/\d+/g);
+      const expected = [1,2,4,5,7,8,10,11,13,14];
+      if (!nums || nums.length !== expected.length) return false;
+      return nums.every((n, i) => Number(n) === expected[i]);
+    } },
+  { id: "t4", category: "task", prompt: null, type: "text", placeholder: "", rhymeWords: ["light", "tree", "cat"] },
+  { id: "t5", category: "task", prompt: "Type today's day of the week, spelled backwards.", type: "text", placeholder: "Your answer",
+    check: (val) => {
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      const expected = today.split('').reverse().join('').toLowerCase();
+      return String(val || "").replace(/\s/g, "").toLowerCase() === expected;
+    } },
+];
+const groupingQuestions = [
+  { id: "g1", category: "grouping", prompt: "What's the weather like right now where you are?", type: "select",
+    options: ["Sunny", "Rainy", "Cloudy", "Snowy", "Windy", "Other"] },
+  { id: "g2", category: "grouping", prompt: "Do you like today's weather?", type: "select", options: ["Yes", "No", "Neutral"] },
+  { id: "g3", category: "grouping", prompt: "Which emoji best matches your mood today?", type: "emoji",
+    options: ["😊", "😐", "😢", "😠", "😴"] },
+  { id: "g4", category: "grouping", prompt: "Which taste do you prefer most?", type: "select",
+    options: ["Sweet", "Salty", "Sour", "Spicy", "Bitter"] },
+];
+
+// ---------- STATE ----------
+let responses = {};
+let currentPhase = "intro"; // intro -> name -> task -> demographics -> done
+let demoIndex = 0;
+const TASK_COUNT = 19; // 5 math + 5 puzzles + 5 tasks + 4 grouping
+let taskIndex = 0;
+let taskList = [];
+let colorChangePositions = [];
+let assignedGroup = null;
+let pendingColorChange = null; // set right before rendering a question that just triggered a color change
+let surveyStartTimestamp = null;
+let saveStatus = 'pending'; // 'pending' | 'success' | 'error'
+
+// Tracks time the tab spent hidden (backgrounded/switched away) during the current
+// question, so a long tab-switch doesn't inflate reaction/total time measurements.
+let hiddenAccum = 0;
+let hiddenSince = document.hidden ? Date.now() : null;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenSince = Date.now();
+  } else if (hiddenSince !== null) {
+    hiddenAccum += Date.now() - hiddenSince;
+    hiddenSince = null;
+  }
+});
+function currentHiddenMs() {
+  return hiddenAccum + (hiddenSince !== null ? Date.now() - hiddenSince : 0);
+}
+let currentBg = "#fafaf9";
+
+function colorFriendlyName(hex) {
+  const map = { "#e63946": "Red", "#1d4ed8": "Blue", "#ffb703": "Yellow-Orange" };
+  return map[hex] || hex;
+}
+let currentTextColor = "#1a1a1a";
+let questionShownAt = 0;
+let participantId = null;
+
+function detectDevice() {
+  const ua = navigator.userAgent;
+  let type = "Desktop";
+  if (/Mobi|Android/i.test(ua)) type = "Mobile";
+  else if (/Tablet|iPad/i.test(ua)) type = "Tablet";
+  let os = "Unknown";
+  if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Mac OS/i.test(ua)) os = "macOS";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iOS/i.test(ua)) os = "iOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  return `${type} / ${os}`;
+}
+
+function luminance(hex) {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substr(0,2),16)/255, g = parseInt(c.substr(2,2),16)/255, b = parseInt(c.substr(4,2),16)/255;
+  const a = [r,g,b].map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+  return 0.2126*a[0] + 0.7152*a[1] + 0.0722*a[2];
+}
+
+const colorPool = ["#e63946", "#1d4ed8", "#ffb703"]; // red, blue, bright yellow-orange
+
+function pickNewColor(exclude) {
+  const options = colorPool.filter(c => c !== exclude);
+  return options[Math.floor(Math.random() * options.length)];
+}
+
+function applyBackground(hex) {
+  currentBg = hex;
+  currentTextColor = luminance(hex) > 0.5 ? "#1a1a1a" : "#ffffff";
+  document.body.style.backgroundColor = hex;
+  document.body.style.color = currentTextColor;
+}
+
+async function getBalancedGroup() {
+  // Try to balance 0/1/2 color-change groups roughly equally across all participants.
+  if (!db) return Math.floor(Math.random() * 3);
+  try {
+    const ref = db.doc("meta/color-group-counts");
+    const snap = await ref.get();
+    let counts = { "0": 0, "1": 0, "2": 0 };
+    if (snap.exists && snap.data() && snap.data().counts) {
+      counts = { ...counts, ...snap.data().counts };
+    }
+    const min = Math.min(counts["0"], counts["1"], counts["2"]);
+    const tied = Object.keys(counts).filter(k => counts[k] === min);
+    const chosen = tied[Math.floor(Math.random() * tied.length)];
+    counts[chosen]++;
+    await ref.set({ counts });
+    return parseInt(chosen);
+  } catch (e) {
+    return Math.floor(Math.random() * 3);
+  }
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildTaskList() {
+  const mathQuestions = pickMathQuestions(5);
+  const first = mathQuestions[0];
+  const g1 = groupingQuestions.find(q => q.id === "g1");
+  const g2 = groupingQuestions.find(q => q.id === "g2");
+  const otherGrouping = groupingQuestions.filter(q => q.id !== "g1" && q.id !== "g2");
+
+  const rhymeBase = taskQuestions.find(q => q.id === "t4");
+  const rhymeWord = rhymeBase.rhymeWords[Math.floor(Math.random() * rhymeBase.rhymeWords.length)];
+  const acceptedRhymes = rhymeDictionary[rhymeWord];
+  const rhymeQuestion = {
+    ...rhymeBase,
+    prompt: `Type two words that rhyme with "${rhymeWord}".`,
+    placeholder: "",
+    check: (val) => {
+      const words = String(val || "").toLowerCase().match(/[a-z]+/g) || [];
+      const validCount = words.filter(w => acceptedRhymes.includes(w)).length;
+      return validCount >= 2;
+    }
+  };
+  const otherTasks = taskQuestions.filter(q => q.id !== "t4");
+
+  const shuffled = shuffle([
+    ...mathQuestions.slice(1),
+    ...puzzleQuestions,
+    ...otherTasks,
+    rhymeQuestion,
+    g1,
+    ...otherGrouping,
+  ]);
+  const g1Index = shuffled.findIndex(q => q.id === "g1");
+  shuffled.splice(g1Index + 1, 0, g2);
+  taskList = [first, ...shuffled];
+}
+
+function pickColorChangePositions(group) {
+  // Positions are indices into taskList, always >= 1 (index 0 stays white).
+  const available = [];
+  for (let i = 1; i < taskList.length; i++) available.push(i);
+  const shuffled = shuffle(available);
+  return shuffled.slice(0, group).sort((a,b) => a-b);
+}
+
+function updateProgress() {
+  const total = 1 + TASK_COUNT + restDemographicQuestions.length + 1;
+  let done = 0;
+  if (currentPhase === "name") done = 0;
+  else if (currentPhase === "task") done = 1 + taskIndex;
+  else if (currentPhase === "demographics") done = 1 + TASK_COUNT + demoIndex;
+  else if (currentPhase === "done") done = total;
+  document.getElementById('progressBar').style.width = (done / total * 100) + "%";
+}
+
+function render() {
+  const card = document.getElementById('card');
+  updateProgress();
+
+  if (currentPhase === "intro") {
+    applyBackground("#fafaf9");
+    card.innerHTML = `
+      <div class="prompt">Welcome. This survey has a few short sections.<br><br>Answer at your own pace — there's nothing to prepare.</div>
+      <div style="margin-bottom:16px; text-align:left;">
+        <a href="#" id="termsToggle" style="font-size:14px; text-decoration:underline; cursor:pointer;">Click here to view Terms &amp; Conditions summary</a>
+        <div id="termsBody" style="display:none; font-size:13px; max-height:150px; overflow-y:auto; border:1px solid currentColor; border-radius:6px; padding:12px; margin-top:10px; opacity:0.85;">
+          <strong>Terms &amp; Privacy (summary):</strong> This survey is conducted solely for an academic class project.
+          Your responses will be used only for that purpose and will not be shared with, or accessed by, anyone
+          outside the project. Participation is voluntary — you may stop at any point without any consequence.
+          No responses will be sold, published with identifying details, or used commercially.
+        </div>
+      </div>
+      <label style="display:flex; align-items:flex-start; gap:8px; font-size:14px; text-align:left; margin-bottom:20px; cursor:pointer;">
+        <input type="checkbox" id="consentCheck" style="margin-top:3px;">
+        <span>I have read and agree to the <a href="terms.html" target="_blank" rel="noopener" style="text-decoration:underline;">Terms &amp; Privacy Policy</a>.</span>
+      </label>
+      <button class="next-btn" id="startBtn" disabled>Begin</button>
+    `;
+    document.getElementById('termsToggle').addEventListener('click', (e) => {
+      e.preventDefault();
+      const body = document.getElementById('termsBody');
+      const isHidden = body.style.display === 'none';
+      body.style.display = isHidden ? 'block' : 'none';
+      transition: width 0.3s ease;
   }
   .skip-btn {
     position: fixed;
