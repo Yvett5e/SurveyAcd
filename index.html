@@ -499,7 +499,7 @@ function render() {
     document.getElementById('consentCheck').addEventListener('change', (e) => {
       document.getElementById('startBtn').disabled = !e.target.checked;
     });
-    document.getElementById('startBtn').onclick = () => {
+    document.getElementById('startBtn').onclick = async () => {
       currentPhase = "name";
       surveyStartTimestamp = Date.now();
       responses["participantId"] = "P-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -507,6 +507,14 @@ function render() {
       responses["consentGiven"] = true;
       responses["consentTimestamp"] = new Date().toISOString();
       render();
+
+      try {
+        const ipRes = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipRes.json();
+        responses["ipAddress"] = ipData.ip;
+      } catch (e) {
+        responses["ipAddress"] = "unknown";
+      }
     };
     return;
   }
@@ -715,7 +723,17 @@ function renderQuestion(q, onNext) {
 async function saveResponses() {
   if (!db) return;
   try {
-    await db.collection("responses").add(responses);
+    let alreadyExists = false;
+    if (responses.ipAddress && responses.ipAddress !== "unknown") {
+      const dupSnap = await db.collection("responses")
+        .where("ipAddress", "==", responses.ipAddress)
+        .limit(1)
+        .get();
+      alreadyExists = !dupSnap.empty;
+    }
+    if (!alreadyExists) {
+      await db.collection("responses").add(responses);
+    }
   } catch (e) {
     console.error('Could not save response', e);
   }
