@@ -660,7 +660,7 @@ function renderQuestion(q, onNext) {
         buttons.forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         selectedValue = btn.getAttribute('data-val');
-        if (cooldownDone) nextBtn.disabled = false;
+        nextBtn.disabled = false;
       };
     });
   }
@@ -688,10 +688,9 @@ function renderQuestion(q, onNext) {
   }
 
   nextBtn.onclick = () => {
-    const isTyped = q.type === "text" || q.type === "number";
-    if (!isTyped && !cooldownDone) return;
+    
     let value;
-    if (isTyped) {
+    if (q.type === "text" || q.type === "number") {
       value = document.getElementById('answerInput').value.trim();
     } else {
       value = selectedValue;
